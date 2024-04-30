@@ -9,9 +9,8 @@ import (
 
 func main() {
 	var i int
-	// ip := "127.0.0.1"
 
-	fmt.Println("HELLO")
+	fmt.Println("Enter 1 for server and 2 for client")
 	fmt.Scanf("%d", &i)
 	if i == 1 {
 		server.Server()

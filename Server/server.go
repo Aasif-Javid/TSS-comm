@@ -14,7 +14,6 @@ import (
 	"flag"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"time"
 )
@@ -38,49 +37,53 @@ func Server() {
 		if err != nil {
 			fmt.Printf("Some connection error: %s\n", err)
 		}
+		sendChan := make(chan string)
+		receiveChan := make(chan string)
 
-		go handleConnection(conn)
+		go sendMessages(conn, sendChan)
+		go receiveMessages(conn, receiveChan)
+		msg := "hello ths is server "
+		sendChan <- msg
+		for {
+			select {
+			case msg := <-receiveChan:
+				fmt.Println("Received:", msg)
+			case <-time.After(time.Second * 10):
+				fmt.Println("No activity for 10 seconds, exiting.")
+				return
+			}
+		}
 	}
 }
 
-func handleConnection(conn net.Conn) {
-	remoteAddr := conn.RemoteAddr().String()
-	fmt.Println("Client connected from " + remoteAddr)
-
-	scanner := bufio.NewScanner(conn)
-
+func sendMessages(conn net.Conn, sendChan <-chan string) {
 	for {
-		ok := scanner.Scan()
-
+		text, ok := <-sendChan
+		fmt.Println("Preparing to send")
 		if !ok {
+			fmt.Println("Channel closed, stopping message sending.")
 			break
 		}
 
-		handleMessage(scanner.Text(), conn)
+		_, err := conn.Write([]byte(text + "\n")) // Add a newline at the end of each message
+		if err != nil {
+			fmt.Println("Error writing to stream.")
+			break
+		}
 	}
-
-	fmt.Println("Client at " + remoteAddr + " disconnected.")
 }
 
-func handleMessage(message string, conn net.Conn) {
-	fmt.Println("> " + message)
-
-	if len(message) > 0 && message[0] == '/' {
-		switch {
-		case message == "/time":
-			resp := "It is " + time.Now().String() + "\n"
-			fmt.Print("< " + resp)
-			conn.Write([]byte(resp))
-
-		case message == "/quit":
-			fmt.Println("Quitting.")
-			conn.Write([]byte("I'm shutting down now.\n"))
-			fmt.Println("< " + "%quit%")
-			conn.Write([]byte("%quit%\n"))
-			os.Exit(0)
-
-		default:
-			conn.Write([]byte("Unrecognized command.\n"))
+func receiveMessages(conn net.Conn, receiveChan chan<- string) {
+	scanner := bufio.NewScanner(conn)
+	for {
+		ok := scanner.Scan()
+		if !ok {
+			fmt.Println("Reached EOF on server connection.")
+			break
 		}
+
+		text := scanner.Text()
+		receiveChan <- text
+
 	}
 }

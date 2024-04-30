@@ -1,17 +1,7 @@
-/*
-A very simple TCP client written in Go.
-
-This is a toy project that I used to learn the fundamentals of writing
-Go code and doing some really basic network stuff.
-
-Maybe it will be fun for you to read. It's not meant to be
-particularly idiomatic, or well-written for that matter.
-*/
 package client
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -22,33 +12,46 @@ import (
 
 func Client() {
 	var host = "172.20.10.4"
-
 	var port = 8000
-	flag.Parse()
 
 	dest := host + ":" + strconv.Itoa(port)
 	fmt.Printf("Connecting to %s...\n", dest)
 
 	conn, err := net.Dial("tcp", dest)
-
 	if err != nil {
-		if _, t := err.(*net.OpError); t {
-			fmt.Println("Some problem connecting.")
-		} else {
-			fmt.Println("Unknown error: " + err.Error())
-		}
+		fmt.Println("Error connecting:", err.Error())
 		os.Exit(1)
 	}
 
-	go readConnection(conn)
+	sendChan := make(chan string)
+	receiveChan := make(chan string)
+
+	go sendMessages(conn, sendChan)
+	go receiveMessages(conn, receiveChan)
+	msg := "hello ths is client "
+	sendChan <- msg
 
 	for {
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("> ")
-		text, _ := reader.ReadString('\n')
+		select {
+		case msg := <-receiveChan:
+			fmt.Println("Received:", msg)
+		case <-time.After(time.Second * 10):
+			fmt.Println("No activity for 10 seconds, exiting.")
+			return
+		}
+	}
+}
 
-		conn.SetWriteDeadline(time.Now().Add(1 * time.Second))
-		_, err := conn.Write([]byte(text))
+func sendMessages(conn net.Conn, sendChan <-chan string) {
+	for {
+		text, ok := <-sendChan
+		fmt.Println("Preparing to send")
+		if !ok {
+			fmt.Println("Channel closed, stopping message sending.")
+			break
+		}
+
+		_, err := conn.Write([]byte(text + "\n")) // Add a newline at the end of each message
 		if err != nil {
 			fmt.Println("Error writing to stream.")
 			break
@@ -56,23 +59,19 @@ func Client() {
 	}
 }
 
-func readConnection(conn net.Conn) {
+func receiveMessages(conn net.Conn, receiveChan chan<- string) {
+	scanner := bufio.NewScanner(conn)
 	for {
-		scanner := bufio.NewScanner(conn)
+		ok := scanner.Scan()
+		if !ok {
+			fmt.Println("Reached EOF on server connection.")
+			break
+		}
 
-		for {
-			ok := scanner.Scan()
-			text := scanner.Text()
-
-			command := handleCommands(text)
-			if !command {
-				fmt.Printf("....\b\b** %s\n> ", text)
-			}
-
-			if !ok {
-				fmt.Println("Reached EOF on server connection.")
-				break
-			}
+		text := scanner.Text()
+		command := handleCommands(text)
+		if !command {
+			receiveChan <- text
 		}
 	}
 }
@@ -81,16 +80,13 @@ func handleCommands(text string) bool {
 	r, err := regexp.Compile("^%.*%$")
 	if err == nil {
 		if r.MatchString(text) {
-
 			switch {
 			case text == "%quit%":
 				fmt.Println("\b\bServer is leaving. Hanging up.")
 				os.Exit(0)
 			}
-
 			return true
 		}
 	}
-
 	return false
 }
