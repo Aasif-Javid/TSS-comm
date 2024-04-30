@@ -20,14 +20,13 @@ import (
 	"time"
 )
 
-var host = flag.String("host", "localhost", "The hostname or IP to connect to; defaults to \"localhost\".")
-
 func Client() {
-	var port = flag.Int("port", 8000, "The port to connect to; defaults to 8000.")
+	var host = "172.20.10.4"
 
+	var port = 8000
 	flag.Parse()
 
-	dest := *host + ":" + strconv.Itoa(*port)
+	dest := host + ":" + strconv.Itoa(port)
 	fmt.Printf("Connecting to %s...\n", dest)
 
 	conn, err := net.Dial("tcp", dest)

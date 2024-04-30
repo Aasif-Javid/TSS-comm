@@ -3,9 +3,8 @@ package main
 import (
 	"fmt"
 
-	client "github.com/Aasif-Javid/comm-TSS/Client"
-	server "github.com/Aasif-Javid/comm-TSS/Server"
-	// "./server"
+	client "github.com/Aasif-Javid/TSS-comm/Client"
+	server "github.com/Aasif-Javid/TSS-comm/Server"
 )
 
 func main() {
