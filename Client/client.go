@@ -7,8 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
-
-	mpc "github.com/Aasif-Javid/TSS-comm/binance"
+	// mpc "github.com/Aasif-Javid/TSS-comm/binance"
 )
 
 var SendChan = make(chan string)
@@ -27,8 +26,8 @@ func Client() {
 		os.Exit(1)
 	}
 
-	logger:=mpc.Logger 
-	party:=mpc.
+	// logger:=mpc.Logger
+	// party:=mpc.
 
 	go sendMessages(conn, SendChan)
 	go receiveMessages(conn, ReceiveChan)
