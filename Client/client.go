@@ -7,8 +7,12 @@ import (
 	"os"
 	"regexp"
 	"strconv"
-	"time"
+
+	mpc "github.com/Aasif-Javid/TSS-comm/binance"
 )
+
+var SendChan = make(chan string)
+var ReceiveChan = make(chan string)
 
 func Client() {
 	var host = "172.20.10.4"
@@ -23,23 +27,28 @@ func Client() {
 		os.Exit(1)
 	}
 
-	sendChan := make(chan string)
-	receiveChan := make(chan string)
+	logger:=mpc.Logger 
+	party:=mpc.
 
-	go sendMessages(conn, sendChan)
-	go receiveMessages(conn, receiveChan)
+	go sendMessages(conn, SendChan)
+	go receiveMessages(conn, ReceiveChan)
 	msg := "hello ths is client "
-	sendChan <- msg
+	SendChan <- msg
 
 	for {
 		select {
-		case msg := <-receiveChan:
+		case msg := <-ReceiveChan:
 			fmt.Println("Received:", msg)
-		case <-time.After(time.Second * 10):
-			fmt.Println("No activity for 10 seconds, exiting.")
-			return
+
 		}
 	}
+}
+
+func sendMsg(msg []byte, isBroadcast bool, to uint16) {
+	message := string(msg)
+	SendChan <- message
+	fmt.Println("Message passed to network sending function")
+
 }
 
 func sendMessages(conn net.Conn, sendChan <-chan string) {
@@ -69,10 +78,8 @@ func receiveMessages(conn net.Conn, receiveChan chan<- string) {
 		}
 
 		text := scanner.Text()
-		command := handleCommands(text)
-		if !command {
-			receiveChan <- text
-		}
+
+		receiveChan <- text
 	}
 }
 

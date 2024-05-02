@@ -21,6 +21,9 @@ import (
 var addr = flag.String("addr", "", "The address to listen to; default is \"\" (all interfaces).")
 var port = flag.Int("port", 8000, "The port to listen on; default is 8000.")
 
+var SendChan = make(chan string)
+var ReceiveChan = make(chan string)
+
 func Server() {
 	flag.Parse()
 
@@ -37,16 +40,14 @@ func Server() {
 		if err != nil {
 			fmt.Printf("Some connection error: %s\n", err)
 		}
-		sendChan := make(chan string)
-		receiveChan := make(chan string)
 
-		go sendMessages(conn, sendChan)
-		go receiveMessages(conn, receiveChan)
+		go sendMessages(conn, SendChan)
+		go receiveMessages(conn, ReceiveChan)
 		msg := "hello ths is server "
-		sendChan <- msg
+		SendChan <- msg
 		for {
 			select {
-			case msg := <-receiveChan:
+			case msg := <-ReceiveChan:
 				fmt.Println("Received:", msg)
 			case <-time.After(time.Second * 10):
 				fmt.Println("No activity for 10 seconds, exiting.")
@@ -54,6 +55,13 @@ func Server() {
 			}
 		}
 	}
+}
+
+func sendMsg(msg []byte, isBroadcast bool, to uint16) {
+	message := string(msg)
+	SendChan <- message
+	fmt.Println("Message passed to network sending function")
+
 }
 
 func sendMessages(conn net.Conn, sendChan <-chan string) {
