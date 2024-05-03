@@ -294,6 +294,8 @@ func (p *party) Sign(ctx context.Context, msgHash []byte) ([]byte, error) {
 }
 
 func (p *party) KeyGen(ctx context.Context) ([]byte, error) {
+
+	// fmt.Println("KeyGen in mpc started")
 	p.logger.Debugf("Starting DKG")
 	defer p.logger.Debugf("Finished DKG")
 
@@ -310,6 +312,7 @@ func (p *party) KeyGen(ctx context.Context) ([]byte, error) {
 		panic(err)
 	}
 
+	fmt.Println("PreParams generated")
 	end := make(chan keygen.LocalPartySaveData, 1)
 	party := keygen.NewLocalParty(p.params, p.out, end, *preParams)
 
@@ -337,6 +340,7 @@ func (p *party) KeyGen(ctx context.Context) ([]byte, error) {
 			}
 			return dkgRawOut, nil
 		case msg := <-p.in:
+			fmt.Println("Received message in mpc from p.in")
 			raw, routing, err := msg.WireBytes()
 			if err != nil {
 				p.logger.Warnf("Received error when serializing message: %v", err)
@@ -353,23 +357,29 @@ func (p *party) KeyGen(ctx context.Context) ([]byte, error) {
 }
 
 func (p *party) sendMessages() {
+	fmt.Println("Send messages in mpc started")
 	for {
 		select {
 		case <-p.closeChan:
 			return
 		case msg := <-p.out:
+			fmt.Println("About to wire message")
 			msgBytes, routing, err := msg.WireBytes()
 			if err != nil {
 				p.logger.Warnf("Failed marshaling message: %v", err)
 				continue
 			}
-			if routing.IsBroadcast {
-				p.sendMsg(msgBytes, routing.IsBroadcast, 0)
-			} else {
-				for _, to := range msg.GetTo() {
-					p.sendMsg(msgBytes, routing.IsBroadcast, uint16(big.NewInt(0).SetBytes(to.Key).Uint64()))
-				}
-			}
+			fmt.Println("Message is wired:", len(msgBytes), routing.IsBroadcast, "to", routing.To, "from:", routing.From.Id, "key:", routing.From.Key)
+
+			p.sendMsg(msgBytes, routing.IsBroadcast, 0)
+
+			// if routing.IsBroadcast {
+			// 	p.sendMsg(msgBytes, routing.IsBroadcast, 0)
+			// } else {
+			// 	for _, to := range msg.GetTo() {
+			// 		p.sendMsg(msgBytes, routing.IsBroadcast, uint16(big.NewInt(0).SetBytes(to.Key).Uint64()))
+			// 	}
+			// }
 		}
 	}
 }
