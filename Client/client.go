@@ -25,7 +25,8 @@ var host = flag.String("host", "localhost", "The hostname or IP to connect to; d
 func Client() {
 	// var port = flag.Int("port", 8000, "The port to connect to; defaults to 8000.")
 	var port = 8000
-	var host = "192.168.1.28"
+	// var host = "192.168.1.28"
+	var host = "192.168.29.64" // library wifi
 
 	flag.Parse()
 
