@@ -135,7 +135,7 @@ func (p *party) locatePartyIndex(id *tss.PartyID) int {
 func (p *party) ClassifyMsg(msgBytes []byte) (uint8, bool, error) {
 	msg := &any.Any{}
 	if err := proto.Unmarshal(msgBytes, msg); err != nil {
-		p.logger.Warnf("Received invalid message: %v", err)
+		p.logger.Warnf(" Received invalid message: %v", err)
 		return 0, false, err
 	}
 

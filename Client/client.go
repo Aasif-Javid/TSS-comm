@@ -55,7 +55,7 @@ func Client() {
 		if err != nil {
 			return
 		}
-		fmt.Println("Share:", share)
+		fmt.Println("Share:", len(share))
 	}()
 	for msg := range ReceiveChan {
 		fmt.Println("Received:", len(msg))
