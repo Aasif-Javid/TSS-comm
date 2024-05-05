@@ -1,12 +1,3 @@
-/*
-A very simple TCP server written in Go.
-
-This is a toy project that I used to learn the fundamentals of writing
-Go code and doing some really basic network stuff.
-
-Maybe it will be fun for you to read. It's not meant to be
-particularly idiomatic, or well-written for that matter.
-*/
 package server
 
 import (
@@ -19,16 +10,21 @@ import (
 	"time"
 )
 
-var addr = flag.String("addr", "", "The address to listen to; default is \"\" (all interfaces).")
-var port = flag.Int("port", 8000, "The port to listen on; default is 8000.")
-
 func Server() {
+	var addr = flag.String("addr", "10.17.80.29", "The address to listen to; default is the vpn assigned address.")
+	// to set another address: go run server.go --addr=address
+	var port = flag.Int("port", 8000, "The port to listen on; default is 8000.")
+
 	flag.Parse()
 
 	fmt.Println("Starting server...")
 
 	src := *addr + ":" + strconv.Itoa(*port)
-	listener, _ := net.Listen("tcp", src)
+	listener, err := net.Listen("tcp", src)
+	if err != nil {
+		fmt.Printf("Failed to open port on %s: %s\n", src, err)
+		os.Exit(1)
+	}
 	fmt.Printf("Listening on %s.\n", src)
 
 	defer listener.Close()
@@ -36,7 +32,8 @@ func Server() {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			fmt.Printf("Some connection error: %s\n", err)
+			fmt.Printf("Failed to accept connection: %s\n", err)
+			continue
 		}
 
 		go handleConnection(conn)
@@ -44,18 +41,13 @@ func Server() {
 }
 
 func handleConnection(conn net.Conn) {
+	defer conn.Close()
 	remoteAddr := conn.RemoteAddr().String()
 	fmt.Println("Client connected from " + remoteAddr)
 
 	scanner := bufio.NewScanner(conn)
 
-	for {
-		ok := scanner.Scan()
-
-		if !ok {
-			break
-		}
-
+	for scanner.Scan() {
 		handleMessage(scanner.Text(), conn)
 	}
 
@@ -65,22 +57,9 @@ func handleConnection(conn net.Conn) {
 func handleMessage(message string, conn net.Conn) {
 	fmt.Println("> " + message)
 
-	if len(message) > 0 && message[0] == '/' {
-		switch {
-		case message == "/time":
-			resp := "It is " + time.Now().String() + "\n"
-			fmt.Print("< " + resp)
-			conn.Write([]byte(resp))
-
-		case message == "/quit":
-			fmt.Println("Quitting.")
-			conn.Write([]byte("I'm shutting down now.\n"))
-			fmt.Println("< " + "%quit%")
-			conn.Write([]byte("%quit%\n"))
-			os.Exit(0)
-
-		default:
-			conn.Write([]byte("Unrecognized command.\n"))
-		}
+	if message == "/time" {
+		resp := "It is " + time.Now().String() + "\n"
+		fmt.Print("< " + resp)
+		conn.Write([]byte(resp))
 	}
 }
