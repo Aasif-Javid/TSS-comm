@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	ecdsa "github.com/Aasif-Javid/TSS-comm/binance/ecdsa"
+	ecdsa "github.com/Aasif-Javid/TSS-comm/crypto/ecdsa"
 	"go.uber.org/zap"
 )
 
