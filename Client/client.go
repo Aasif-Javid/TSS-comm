@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -26,10 +27,11 @@ func logger(id string, testName string) ecdsa.Logger {
 }
 
 func Client() {
-	var host = "172.20.10.4"
-	var port = 8000
+	var host = flag.String("host", "10.17.80.29", "The hostname or IP to connect to; defaults to VPN assigned address.")
+	// to set another host: go run client.go --host=host's address
+	var port = flag.Int("port", 8000, "The port to connect to; defaults to 8000.")
 
-	dest := host + ":" + strconv.Itoa(port)
+	dest := *host + ":" + strconv.Itoa(*port)
 	fmt.Printf("Connecting to %s...\n", dest)
 
 	conn, err := net.Dial("tcp", dest)

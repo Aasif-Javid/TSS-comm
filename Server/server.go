@@ -25,8 +25,8 @@ import (
 	"go.uber.org/zap"
 )
 
-var addr = flag.String("addr", "", "The address to listen to; default is \"\" (all interfaces).")
-var port = flag.Int("port", 8000, "The port to listen on; default is 8000.")
+// var addr = flag.String("addr", "", "The address to listen to; default is \"\" (all interfaces).")
+// var port = flag.Int("port", 8000, "The port to listen on; default is 8000.")
 
 var SendChan = make(chan []byte, 1000)
 var ReceiveChan = make(chan []byte, 1000)
@@ -39,6 +39,10 @@ func logger(id string, testName string) ecdsa.Logger {
 }
 
 func Server() {
+	var addr = flag.String("addr", "10.17.80.29", "The address to listen to; default is the vpn assigned address.")
+	// to set another address: go run server.go --addr=address
+	var port = flag.Int("port", 8000, "The port to listen on; default is 8000.")
+
 	flag.Parse()
 
 	fmt.Println("Starting server...")
