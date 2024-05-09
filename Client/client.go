@@ -49,13 +49,38 @@ func Client() {
 
 	go sendMessages(conn, SendChan)
 	go receiveMessages(conn, ReceiveChan)
-
 	go func() {
-		share, err := party.KeyGen(context.Background())
-		if err != nil {
-			return
+		for {
+			fmt.Println("Choose Operation\n1. KeyGen\n2. Sign\n")
+			var choice int
+			fmt.Scanln(&choice)
+
+			switch choice {
+			case 1:
+				sendMsg([]byte("initiate keygen"), false, 1)
+
+				go func() {
+					share, err := party.KeyGen(context.Background())
+					if err != nil {
+						return
+					}
+					fmt.Println("Share:", len(share))
+				}()
+			case 2:
+				sendMsg([]byte("initiate sign"), false, 1)
+				party.LoadLocalPartySaveData()
+
+				go func() {
+					msg := []byte("test")
+					sigs, err := party.Sign(context.Background(), msg)
+					if err != nil {
+						return
+					}
+
+					fmt.Println("Signature:", len(sigs))
+				}()
+			}
 		}
-		fmt.Println("Share:", len(share))
 	}()
 	for msg := range ReceiveChan {
 		fmt.Println("Received:", len(msg))
@@ -70,6 +95,7 @@ func Client() {
 
 		party.OnMsg([]byte(msg), uint16(1), isBroadcast)
 	}
+
 }
 
 func sendMsg(msg []byte, isBroadcast bool, to uint16) {
@@ -78,6 +104,7 @@ func sendMsg(msg []byte, isBroadcast bool, to uint16) {
 	fmt.Println("Message passed to network sending function")
 
 }
+
 func sendMessages(conn net.Conn, sendChan <-chan []byte) {
 	for {
 		text, ok := <-sendChan

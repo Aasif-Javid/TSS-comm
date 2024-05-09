@@ -36,7 +36,7 @@ func (parties parties) sign(msg []byte) ([][]byte, error) {
 	wg.Add(len(parties))
 
 	for _, p := range parties {
-		go func(p *party) {
+		go func(p *Party) {
 			defer wg.Done()
 			sig, err := p.Sign(context.Background(), msg)
 			if err != nil {
@@ -69,7 +69,7 @@ func (parties parties) keygen() ([][]byte, error) {
 	wg.Add(len(parties))
 
 	for i, p := range parties {
-		go func(p *party, i int) {
+		go func(p *Party, i int) {
 			defer wg.Done()
 			share, err := p.KeyGen(context.Background())
 			if err != nil {
@@ -96,7 +96,7 @@ func (parties parties) keygen() ([][]byte, error) {
 func (parties parties) Mapping() map[string]*tss.PartyID {
 	partyIDMap := make(map[string]*tss.PartyID)
 	for _, id := range parties {
-		partyIDMap[id.id.Id] = id.id
+		partyIDMap[id.Id.Id] = id.Id
 	}
 	return partyIDMap
 }
@@ -148,17 +148,17 @@ func senders(parties parties) []Sender {
 	for _, src := range parties {
 		src := src
 		sender := func(msgBytes []byte, broadcast bool, to uint16) {
-			messageSource := uint16(big.NewInt(0).SetBytes(src.id.Key).Uint64())
+			messageSource := uint16(big.NewInt(0).SetBytes(src.Id.Key).Uint64())
 			if broadcast {
 				for _, dst := range parties {
-					if dst.id == src.id {
+					if dst.Id == src.Id {
 						continue
 					}
 					dst.OnMsg(msgBytes, messageSource, broadcast)
 				}
 			} else {
 				for _, dst := range parties {
-					if to != uint16(big.NewInt(0).SetBytes(dst.id.Key).Uint64()) {
+					if to != uint16(big.NewInt(0).SetBytes(dst.Id.Key).Uint64()) {
 						continue
 					}
 					dst.OnMsg(msgBytes, messageSource, broadcast)

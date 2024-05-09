@@ -1,18 +1,11 @@
-/*
-A very simple TCP server written in Go.
-
-This is a toy project that I used to learn the fundamentals of writing
-Go code and doing some really basic network stuff.
-
-Maybe it will be fun for you to read. It's not meant to be
-particularly idiomatic, or well-written for that matter.
-*/
 package server
 
 import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -20,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	ecdsa "github.com/Aasif-Javid/TSS-comm/crypto/ecdsa"
 	"go.uber.org/zap"
@@ -38,8 +32,24 @@ func logger(id string, testName string) ecdsa.Logger {
 	return logger.Sugar()
 }
 
+type Session struct {
+	conn   net.Conn
+	logger ecdsa.Logger
+	party  *ecdsa.Party
+}
+
+var sessions = make(map[string]*Session)
+var sessionMutex sync.Mutex
+
+func generateSessionID(conn net.Conn) string {
+	remoteAddr := conn.RemoteAddr().String()
+	hash := sha256.Sum256([]byte(remoteAddr))
+	return hex.EncodeToString(hash[:])
+}
+
 func Server() {
 	flag.Parse()
+	logger := logger("server", "server")
 
 	fmt.Println("Starting server...")
 
@@ -51,43 +61,69 @@ func Server() {
 
 	for {
 		conn, err := listener.Accept()
-		var parties []uint16
 		if err != nil {
 			fmt.Println("Error connecting:", err.Error())
-			os.Exit(1)
-		} else if conn != nil {
-			fmt.Println("Connected to client")
-			parties = append(parties, 1, 2)
-			fmt.Println("Parties:", parties)
+			continue
 		}
-		logger := logger("server", "server")
-		party := ecdsa.NewParty(1, logger)
 
-		party.Init(parties, 1, sendMsg)
+		sessionID := generateSessionID(conn)
+		fmt.Println("Connected to client with session ID:", sessionID)
 
-		go sendMessages(conn, SendChan)
-		go receiveMessages(conn, ReceiveChan)
+		sessionMutex.Lock()
+		sessions[sessionID] = &Session{
+			conn:   conn,
+			logger: logger,
+			party:  ecdsa.NewParty(1, logger),
+		}
+		// Handle the connection for a specific session
+		go sendMessages(sessions[sessionID].conn, SendChan)
+		go receiveMessages(sessions[sessionID].conn, ReceiveChan)
+		// sendMsg([]byte("initiated keygen"), false, 1)
+		// party := ecdsa.NewParty(1, logger)
+		// party.Init([]uint16{1, 2}, 1, sendMsg)
+		sessions[sessionID].party.Init([]uint16{1, 2}, 1, sendMsg)
+		sessionMutex.Unlock()
 
-		go func() {
-			share, err := party.KeyGen(context.Background())
+		go handleClient(sessionID)
+	}
+}
+
+func handleClient(sessionID string) {
+	session := sessions[sessionID]
+	defer session.conn.Close()
+
+	for msg := range ReceiveChan {
+		if string(msg) == "initiate keygen" {
+			session.logger.Debugf("Initiating key generation for session", sessionID)
+			go func() {
+				share, err := session.party.KeyGen(context.Background())
+				if err != nil {
+					fmt.Println("KeyGen error:", err)
+
+				}
+				session.logger.Debugf("Key generation complete for session", sessionID, "Share length:", len(share))
+			}()
+
+		} else if string(msg) == "initiate sign" {
+			session.logger.Debugf("Initiating signature for session", sessionID)
+			session.party.LoadLocalPartySaveData()
+			go func() {
+				sig, err := session.party.Sign(context.Background(), []byte("test"))
+				if err != nil {
+					fmt.Println("Sign error:", err)
+				}
+				session.logger.Debugf("Signature generation complete for session", sessionID, "Signature length:", len(sig))
+			}()
+		} else {
+			round, isBroadcast, err := session.party.ClassifyMsg(msg)
 			if err != nil {
+				fmt.Println("Error in classifying message:", err)
 				return
 			}
-			fmt.Println("Share:", len(share))
-		}()
-		for msg := range ReceiveChan {
-			fmt.Println("Received:", len(msg))
-			round, isBroadcast, err := party.ClassifyMsg(msg)
-
-			if err != nil {
-				fmt.Println("Error in classifying message")
-				os.Exit(2)
-			} else {
-				fmt.Println("Round:", round)
-			}
-
-			party.OnMsg([]byte(msg), uint16(2), isBroadcast)
+			session.logger.Debugf("Round: %d", round)
+			session.party.OnMsg(msg, uint16(2), isBroadcast)
 		}
+
 	}
 }
 

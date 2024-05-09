@@ -11,8 +11,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"math/big"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -75,12 +78,12 @@ var (
 
 type Sender func(msg []byte, isBroadcast bool, to uint16)
 
-type parties []*party
+type parties []*Party
 
 func (parties parties) numericIDs() []uint16 {
 	var res []uint16
 	for _, p := range parties {
-		res = append(res, uint16(big.NewInt(0).SetBytes(p.id.Key).Uint64()))
+		res = append(res, uint16(big.NewInt(0).SetBytes(p.Id.Key).Uint64()))
 	}
 
 	return res
@@ -92,10 +95,10 @@ type Logger interface {
 	Errorf(format string, a ...interface{})
 }
 
-type party struct {
-	logger    Logger
+type Party struct {
+	Logger    Logger
 	sendMsg   Sender
-	id        *tss.PartyID
+	Id        *tss.PartyID
 	params    *tss.Parameters
 	out       chan tss.Message
 	in        chan tss.Message
@@ -103,20 +106,20 @@ type party struct {
 	closeChan chan struct{}
 }
 
-func NewParty(id uint16, logger Logger) *party {
-	return &party{
-		logger: logger,
-		id:     tss.NewPartyID(fmt.Sprintf("%d", id), "", big.NewInt(int64(id))),
+func NewParty(id uint16, logger Logger) *Party {
+	return &Party{
+		Logger: logger,
+		Id:     tss.NewPartyID(fmt.Sprintf("%d", id), "", big.NewInt(int64(id))),
 		out:    make(chan tss.Message, 1000),
 		in:     make(chan tss.Message, 1000),
 	}
 }
 
-func (p *party) ID() *tss.PartyID {
-	return p.id
+func (p *Party) ID() *tss.PartyID {
+	return p.Id
 }
 
-func (p *party) locatePartyIndex(id *tss.PartyID) int {
+func (p *Party) locatePartyIndex(id *tss.PartyID) int {
 	for index, p := range p.params.Parties().IDs() {
 		if bytes.Equal(p.Key, id.Key) {
 			return index
@@ -126,10 +129,10 @@ func (p *party) locatePartyIndex(id *tss.PartyID) int {
 	return -1
 }
 
-func (p *party) ClassifyMsg(msgBytes []byte) (uint8, bool, error) {
+func (p *Party) ClassifyMsg(msgBytes []byte) (uint8, bool, error) {
 	msg := &any.Any{}
 	if err := proto.Unmarshal(msgBytes, msg); err != nil {
-		p.logger.Warnf(" Received invalid message: %v", err)
+		p.Logger.Warnf(" Received invalid message: %v", err)
 		return 0, false, err
 	}
 
@@ -142,31 +145,31 @@ func (p *party) ClassifyMsg(msgBytes []byte) (uint8, bool, error) {
 	return round, isBroadcast, nil
 }
 
-func (p *party) OnMsg(msgBytes []byte, from uint16, broadcast bool) {
+func (p *Party) OnMsg(msgBytes []byte, from uint16, broadcast bool) {
 	id := tss.NewPartyID(fmt.Sprintf("%d", from), "", big.NewInt(int64(from)))
 	id.Index = p.locatePartyIndex(id)
 	msg, err := tss.ParseWireMessage(msgBytes, id, broadcast)
 	if err != nil {
-		p.logger.Warnf("Received invalid message (%s) of %d bytes from %d: %v", base64.StdEncoding.EncodeToString(msgBytes), len(msgBytes), from, err)
+		p.Logger.Warnf("Received invalid message (%s) of %d bytes from %d: %v", base64.StdEncoding.EncodeToString(msgBytes), len(msgBytes), from, err)
 		return
 	}
 
 	key := msg.GetFrom().KeyInt()
 	if key == nil || key.Cmp(big.NewInt(int64(math.MaxUint16))) >= 0 {
-		p.logger.Warnf("Message received from invalid key: %v", key)
+		p.Logger.Warnf("Message received from invalid key: %v", key)
 		return
 	}
 
 	claimedFrom := uint16(key.Uint64())
 	if claimedFrom != from {
-		p.logger.Warnf("Message claimed to be from %d but was received from %d", claimedFrom, from)
+		p.Logger.Warnf("Message claimed to be from %d but was received from %d", claimedFrom, from)
 		return
 	}
 
 	p.in <- msg
 }
 
-func (p *party) TPubKey() (*ecdsa.PublicKey, error) {
+func (p *Party) TPubKey() (*ecdsa.PublicKey, error) {
 	if p.shareData == nil {
 		return nil, fmt.Errorf("must call SetShareData() before attempting to sign")
 	}
@@ -180,7 +183,7 @@ func (p *party) TPubKey() (*ecdsa.PublicKey, error) {
 	}, nil
 }
 
-func (p *party) ThresholdPK() ([]byte, error) {
+func (p *Party) ThresholdPK() ([]byte, error) {
 	pk, err := p.TPubKey()
 	if err != nil {
 		return nil, err
@@ -188,7 +191,7 @@ func (p *party) ThresholdPK() ([]byte, error) {
 	return x509.MarshalPKIXPublicKey(pk)
 }
 
-func (p *party) SetShareData(shareData []byte) error {
+func (p *Party) SetShareData(shareData []byte) error {
 	var localSaveData keygen.LocalPartySaveData
 	err := json.Unmarshal(shareData, &localSaveData)
 	if err != nil {
@@ -202,11 +205,11 @@ func (p *party) SetShareData(shareData []byte) error {
 	return nil
 }
 
-func (p *party) Init(parties []uint16, threshold int, sendMsg func(msg []byte, isBroadcast bool, to uint16)) {
+func (p *Party) Init(parties []uint16, threshold int, sendMsg func(msg []byte, isBroadcast bool, to uint16)) {
 	partyIDs := partyIDsFromNumbers(parties)
 	ctx := tss.NewPeerContext(partyIDs)
-	p.params = tss.NewParameters(elliptic.P256(), ctx, p.id, len(parties), threshold)
-	p.id.Index = p.locatePartyIndex(p.id)
+	p.params = tss.NewParameters(elliptic.P256(), ctx, p.Id, len(parties), threshold)
+	p.Id.Index = p.locatePartyIndex(p.Id)
 	p.sendMsg = sendMsg
 	p.closeChan = make(chan struct{})
 	go p.sendMessages()
@@ -221,12 +224,12 @@ func partyIDsFromNumbers(parties []uint16) []*tss.PartyID {
 	return tss.SortPartyIDs(partyIDs)
 }
 
-func (p *party) Sign(ctx context.Context, msgHash []byte) ([]byte, error) {
+func (p *Party) Sign(ctx context.Context, msgHash []byte) ([]byte, error) {
 	if p.shareData == nil {
 		return nil, fmt.Errorf("must call SetShareData() before attempting to sign")
 	}
-	p.logger.Debugf("Starting signing")
-	defer p.logger.Debugf("Finished signing")
+	p.Logger.Debugf("Starting signing")
+	defer p.Logger.Debugf("Finished signing")
 
 	defer close(p.closeChan)
 
@@ -242,7 +245,7 @@ func (p *party) Sign(ctx context.Context, msgHash []byte) ([]byte, error) {
 		defer endWG.Done()
 		err := party.Start()
 		if err != nil {
-			p.logger.Errorf("Failed signing: %v", err)
+			p.Logger.Errorf("Failed signing: %v", err)
 		}
 	}()
 
@@ -274,24 +277,24 @@ func (p *party) Sign(ctx context.Context, msgHash []byte) ([]byte, error) {
 		case msg := <-p.in:
 			raw, routing, err := msg.WireBytes()
 			if err != nil {
-				p.logger.Warnf("Received error when serializing message: %v", err)
+				p.Logger.Warnf("Received error when serializing message: %v", err)
 				continue
 			}
-			p.logger.Debugf("%s Got message from %s", p.id.Id, routing.From.Id)
+			p.Logger.Debugf("%s Got message from %s", p.Id.Id, routing.From.Id)
 			ok, err := party.UpdateFromBytes(raw, routing.From, routing.IsBroadcast)
 			if !ok {
-				p.logger.Warnf("Received error when updating party: %v", err.Error())
+				p.Logger.Warnf("Received error when updating party: %v", err.Error())
 				continue
 			}
 		}
 	}
 }
 
-func (p *party) KeyGen(ctx context.Context) ([]byte, error) {
+func (p *Party) KeyGen(ctx context.Context) ([]byte, error) {
 
 	// fmt.Println("KeyGen in mpc started")
-	p.logger.Debugf("Starting DKG")
-	defer p.logger.Debugf("Finished DKG")
+	p.Logger.Debugf("Starting DKG")
+	defer p.Logger.Debugf("Finished DKG")
 
 	defer close(p.closeChan)
 
@@ -317,7 +320,7 @@ func (p *party) KeyGen(ctx context.Context) ([]byte, error) {
 		defer endWG.Done()
 		err := party.Start()
 		if err != nil {
-			p.logger.Errorf("Failed generating key: %v", err)
+			p.Logger.Errorf("Failed generating key: %v", err)
 		}
 	}()
 
@@ -332,25 +335,43 @@ func (p *party) KeyGen(ctx context.Context) ([]byte, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed serializing DKG output: %w", err)
 			}
+			p.SaveLocalPartySaveData(dkgRawOut)
 			return dkgRawOut, nil
 		case msg := <-p.in:
 			fmt.Println("Received message in mpc from p.in")
 			raw, routing, err := msg.WireBytes()
 			if err != nil {
-				p.logger.Warnf("Received error when serializing message: %v", err)
+				p.Logger.Warnf("Received error when serializing message: %v", err)
 				continue
 			}
-			p.logger.Debugf("%s Got message from %s", p.id.Id, routing.From.Id)
+			p.Logger.Debugf("%s Got message from %s", p.Id.Id, routing.From.Id)
 			ok, err := party.UpdateFromBytes(raw, routing.From, routing.IsBroadcast)
 			if !ok {
-				p.logger.Warnf("Received error when updating party: %v", err.Error())
+				p.Logger.Warnf("Received error when updating party: %v", err.Error())
 				continue
 			}
 		}
 	}
 }
 
-func (p *party) sendMessages() {
+func (p *Party) SaveLocalPartySaveData(shareData []byte) {
+	//save bytes data locally
+	WriteToFile("localsavedata"+strconv.Itoa(p.ID().Index), shareData)
+	p.Logger.Debugf("Saved Data locally")
+
+}
+
+func (p *Party) LoadLocalPartySaveData() {
+	shareData, err := ReadFromFile("localsavedata" + strconv.Itoa(p.ID().Index))
+	if err != nil {
+		p.Logger.Debugf("Failed to load data", err)
+		return
+	} else {
+		p.SetShareData(shareData)
+	}
+}
+
+func (p *Party) sendMessages() {
 	fmt.Println("Send messages in mpc started")
 	for {
 		select {
@@ -360,7 +381,7 @@ func (p *party) sendMessages() {
 			fmt.Println("About to wire message")
 			msgBytes, routing, err := msg.WireBytes()
 			if err != nil {
-				p.logger.Warnf("Failed marshaling message: %v", err)
+				p.Logger.Warnf("Failed marshaling message: %v", err)
 				continue
 			}
 			fmt.Println("Message is wired:", len(msgBytes), routing.IsBroadcast, "to", routing.To, "from:", routing.From.Id, "key:", routing.From.Key)
@@ -398,4 +419,22 @@ func digest(in []byte) []byte {
 	h := sha256.New()
 	h.Write(in)
 	return h.Sum(nil)
+}
+
+func WriteToFile(filename string, data []byte) error {
+	// Write data to the specified filename with permissions
+	err := os.WriteFile(filename, data, 0644) // 0644 allows owner to read/write and others to read
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadFromFile(filename string) ([]byte, error) {
+	// Read the data from the file
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
